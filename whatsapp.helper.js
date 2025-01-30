@@ -18,10 +18,10 @@ exports.RUCreateSession = async (body) => {
                 throwHttpErrors: false,
             }
         );
-        return response;
+        return response.body; // Returning JSON directly
     } catch (error) {
         console.error("Error in RUCreateSession:", error);
-        throw error; // Propagate the error for better error handling in the route
+        throw error;
     }
 };
 
@@ -35,19 +35,21 @@ exports.RUInitiateUpload = async (uploadSessionId, fileBuffer) => {
             `${process.env.META_API_URI}/${uploadSessionId}`,
             {
                 headers: {
-                    Authorization: `OAuth ${process.env.META_ACCESS_TOKEN}`,
+                    Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
                     Accept: "*/*",
-                    "file_offset": 0, // Required for resumable uploads
                 },
-                body: fileBuffer, // Use the file buffer directly
+                json: {
+                    file_offset: 0 // Required for resumable uploads
+                },
+                body: fileBuffer,
                 responseType: "json",
                 throwHttpErrors: false,
             }
         );
-        return response;
+        return response.body;
     } catch (error) {
         console.error("Error in RUInitiateUpload:", error);
-        throw error; // Propagate the error for better error handling in the route
+        throw error;
     }
 };
 
@@ -69,9 +71,9 @@ exports.createWABANOTemplates = async (body) => {
                 throwHttpErrors: false,
             }
         );
-        return response;
+        return response.body;
     } catch (error) {
         console.error("Error in createWABANOTemplates:", error);
-        throw error; // Propagate the error for better error handling in the route
+        throw error;
     }
 };
