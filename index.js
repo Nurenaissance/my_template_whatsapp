@@ -1,131 +1,108 @@
 require('dotenv').config();
 const express = require('express');
-const app = express();
 const cors = require('cors');
-app.use(cors());
+const multer = require("multer");
+const path = require("path");
+const WAHelper = require("./whatsapp.helper");
 
+const app = express();
+app.use(cors());
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
-const WAHelper = require("./whatsapp.helper");
-const path = require("path");
-const multer = require("multer");
-
 // CONFIGURATION
-const fileSize = 100; // 100MB (Facebook's max file size for media)
+const fileSize = 100 * 1024 * 1024; // 100MB
 const fileTypes = /jpeg|jpg|png|mp4|mp3|m4a|aac|amr|ogg|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|webp|3gp/;
+const audioTypes = /mp3|m4a|aac|amr|ogg/;
+
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: {
-        fileSize: (1024 * 1024 * fileSize) // 100 MB
-    },
+    limits: { fileSize },
     fileFilter: (req, file, cb) => {
-        // VALIDATE FILE EXT
         const extname = fileTypes.test(path.extname(file.originalname).toLowerCase());
         const mimetype = fileTypes.test(file.mimetype);
-        if (extname && mimetype) {
-            cb(null, true);
-        } else {
-            cb(new Error(`Only ${fileTypes.toString()} extensions are allowed!`), false);
-        }
+        if (extname && mimetype) cb(null, true);
+        else cb(new Error(`Only ${fileTypes.toString()} extensions are allowed!`), false);
     }
 });
 
-// UPLOAD MEDIA ROUTE
+// UPLOAD MEDIA ROUTE (Handles Audio Processing)
 app.post('/uploadMedia', upload.single('file'), async (req, res) => {
     try {
-        // FILE IS REQUIRED
         if (!req.file) {
-            return res.status(400).send({
-                message: `File is required!`
-            });
+            return res.status(400).send({ message: `File is required!` });
         }
 
-        // CREATE SESSION
+        const { originalname, size, mimetype, buffer } = req.file;
+        const isAudio = audioTypes.test(path.extname(originalname).toLowerCase());
+
+        // Create Upload Session
         let session = await WAHelper.RUCreateSession({
-            file_length: req.file.size,
-            file_name: req.file.originalname,
-            file_type: req.file.mimetype
+            file_length: size,
+            file_name: originalname,
+            file_type: mimetype
         });
 
-        if (session.body.error) {
-            // LOG ERROR, AND RESPONSE
-            console.error(session.body.error);
+        if (session.error) {
+            console.error(session.error);
             return res.status(400).send({
-                message: session.body.error.error_user_title ? session.body.error.error_user_title + ` (${session.body.error.error_user_msg})` : session.body.error.message
+                message: session.error.error_user_title 
+                    ? `${session.error.error_user_title} (${session.error.error_user_msg})` 
+                    : session.error.message
             });
         }
 
-        // INITIATE UPLOAD
-        let iupload = await WAHelper.RUInitiateUpload(session.body.id, req.file.buffer);
-        if (iupload.body.h) {
-            // SUCCESS RESPONSE
-            console.log(iupload.body);
+        // Initiate Upload
+        let iupload = await WAHelper.RUInitiateUpload(session.id, buffer);
+        if (iupload.h) {
+            console.log(iupload);
             return res.status(200).send({
                 message: "Uploaded!",
-                body: iupload.body
+                body: iupload
             });
-        }
-        // ERROR
-        else if (iupload.body.error) {
-            // LOG ERROR, AND RESPONSE
-            console.error(iupload.body.error);
+        } else if (iupload.error) {
+            console.error(iupload.error);
             return res.status(400).send({
-                message: iupload.body.error.error_user_title ? iupload.body.error.error_user_title + ` (${iupload.body.error.error_user_msg})` : iupload.body.error.message
+                message: iupload.error.error_user_title 
+                    ? `${iupload.error.error_user_title} (${iupload.error.error_user_msg})` 
+                    : iupload.error.message
             });
-        }
-        else {
-            // LOG ERROR, AND RESPONSE
+        } else {
             console.error(iupload);
-            return res.status(400).send({
-                message: "Something went wrong please try again!"
-            });
+            return res.status(400).send({ message: "Something went wrong!" });
         }
     } catch (error) {
-        // LOG ERROR, AND RESPONSE
         console.error(error);
-        return res.status(500).send({
-            message: "Internal server error!"
-        });
+        return res.status(500).send({ message: "Internal server error!" });
     }
 });
 
-// CREATE TEMPLATE
+// CREATE TEMPLATE ROUTE
 app.post('/createTemplate', async (req, res) => {
     try {
         let template = await WAHelper.createWABANOTemplates(req.body);
-        if (template.body.id) {
+        if (template.id) {
             return res.status(200).send({
                 message: "Template Created!",
-                body: template.body
+                body: template
             });
-        }
-        // ERROR
-        else if (template.body.error) {
-            // LOG ERROR, AND RESPONSE
-            console.error(template.body.error);
+        } else if (template.error) {
+            console.error(template.error);
             return res.status(400).send({
-                message: template.body.error.error_user_title ? template.body.error.error_user_title + ` (${template.body.error.error_user_msg})` : template.body.error.message
+                message: template.error.error_user_title 
+                    ? `${template.error.error_user_title} (${template.error.error_user_msg})` 
+                    : template.error.message
             });
         }
-        // LOG ERROR, AND RESPONSE
         console.error(template);
-        return res.status(400).send({
-            message: "Something went wrong please try again!"
-        });
+        return res.status(400).send({ message: "Something went wrong!" });
     } catch (error) {
-        // LOG ERROR, AND RESPONSE
         console.error(error);
-        return res.status(500).send({
-            message: "Internal server error!"
-        });
+        return res.status(500).send({ message: "Internal server error!" });
     }
 });
 
 // SERVER LISTEN
-const port = process.env.PORT;
-app.listen(port, () => {
-    console.info(`Listening on port ${port}...`)
-}).on("error", (err) => {
-    console.error(err.message);
-});
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.info(`Listening on port ${port}...`))
+    .on("error", (err) => console.error(err.message));
